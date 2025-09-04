@@ -19,7 +19,7 @@ OUTPUT_HTML="$2"
 
 log "Creating HTML report template..."
 
-cat > "$OUTPUT_HTML" <<EOF
+cat > "$OUTPUT_HTML" <<'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -119,7 +119,7 @@ cat > "$OUTPUT_HTML" <<EOF
                     reportContainer.empty();
                     
                     // Create new table
-                    var tableId = 'table-' + reportType;
+                    var tableId = 'table-' + reportType.replace(/\s+/g, '-').toLowerCase();
                     var tableHtml = '<div class="report-section"><h2>' + reportType + ' Report</h2><table id="' + tableId + '" class="display"></table></div>';
                     reportContainer.append(tableHtml);
 
@@ -140,7 +140,7 @@ cat > "$OUTPUT_HTML" <<EOF
 
             }).fail(function(jqXHR, textStatus, errorThrown) {
                 reportContainer.html('<div style="text-align:center; color:red;">Failed to load report data. Please ensure "all_reports.json" exists.</div>');
-                log("Error loading JSON: " + textStatus + ", " + errorThrown);
+                console.error("Error loading JSON: " + textStatus + ", " + errorThrown);
             });
         });
     </script>

@@ -86,7 +86,7 @@ check_dependencies() {
 # --- Main Script ---
 check_dependencies
 log "✍️ Preparing output file: $FILENAME"
-echo "" > "$FILENAME"
+echo "[" > "$FILENAME" # Start of JSON array
 
 for region in "${REGIONS[@]}"; do
     log "Processing Region: \033[1;33m$region\033[0m"
@@ -96,7 +96,6 @@ for region in "${REGIONS[@]}"; do
     EC2_DATA=$(aws ec2 describe-instances --region "$region" --query 'Reservations[].Instances[]' --output json)
 
     if [[ "$(echo "$EC2_DATA" | jq 'length')" -gt 0 ]]; then
-        # Get all unique instance types first, then fetch specs in one go to reduce API calls.
         mapfile -t INSTANCE_TYPES < <(echo "$EC2_DATA" | jq -r '.[].InstanceType' | sort -u)
         declare -A INSTANCE_SPECS
         if [[ ${#INSTANCE_TYPES[@]} -gt 0 ]]; then
@@ -112,8 +111,14 @@ for region in "${REGIONS[@]}"; do
             done < <(echo "$TYPE_SPECS" | jq -c '.[]')
         fi
 
+        local first_item=true
         log "  [EC2] Processing and writing to JSON..."
         while IFS= read -r instance; do
+            if [ "$first_item" = true ]; then
+                first_item=false
+            else
+                echo "," >> "$FILENAME"
+            fi
             ID=$(echo "$instance" | jq -r '.InstanceId')
             STATE=$(echo "$instance" | jq -r '.State.Name')
             TYPE=$(echo "$instance" | jq -r '.InstanceType')
@@ -188,11 +193,11 @@ for region in "${REGIONS[@]}"; do
                     "instanceType": $instance_type,
                     "elasticIp": $elastic_ip,
                     "launchTime": $launch_time,
-                    "vCPUs": $vcpu,
-                    "memoryGib": $mem_gib,
-                    "diskGib": $disk_gib,
-                    "avgCpuPercent": $cpu_util,
-                    "avgMemoryPercent": $avg_mem_percent,
+                    "vCPUs": ($vcpu | tonumber),
+                    "memoryGib": ($mem_gib | tonumber),
+                    "diskGib": ($disk_gib | tonumber),
+                    "avgCpuPercent": ($cpu_util | tonumber),
+                    "avgMemoryPercent": ($avg_mem_percent | tonumber),
                     "region": $region
                 }' >> "$FILENAME"
 
@@ -204,4 +209,5 @@ for region in "${REGIONS[@]}"; do
     log "Region \033[1;33m$region\033[0m Complete."
 done
 
+echo "]" >> "$FILENAME" # End of JSON array
 log "✅ DONE. Results saved to: $FILENAME"

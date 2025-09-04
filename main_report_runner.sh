@@ -1,0 +1,240 @@
+#!/bin/bash
+# main_report_runner.sh
+# Main script to run all AWS reporting scripts based on a configuration file.
+
+set -euo pipefail
+
+# --- Logging Functions with Status Symbols ---
+log() {
+    echo >&2 -e "[$(date +'%H:%M:%S')] $*"
+}
+
+log_start() {
+    echo >&2 -e "[$(date +'%H:%M:%S')] $*"
+}
+
+log_success() {
+    echo >&2 -e "[$(date +'%H:%M:%S')] ✅ $*"
+}
+
+log_error() {
+    echo >&2 -e "[$(date +'%H:%M:%S')] ❌ $*"
+}
+
+# --- Main Script ---
+log_start "🚀 Starting combined AWS report generation..."
+
+# Set execute permissions for the dependency script
+log_start "🔧 Setting execute permissions for dependency script..."
+chmod +x ./dependencies.sh
+log_success "Permissions set."
+
+# Run the dependency installation script
+./dependencies.sh
+
+log_start "🔧 Setting execute permissions for all report scripts..."
+chmod +x ./script/aws_ec2_report.sh
+chmod +x ./script/aws_rds_report.sh
+chmod +x ./script/aws_ri_report.sh
+chmod +x ./script/aws_sp_report.sh
+chmod +x ./script/ebs_report.sh
+chmod +x ./script/ebs_utilization_report.sh
+chmod +x ./script/aws_billing_report.sh
+chmod +x ./script/s3_report.sh
+chmod +x ./script/elasticache_report.sh
+chmod +x ./script/eks_report.sh
+chmod +x ./script/elb_report.sh
+chmod +x ./script/efs_report.sh
+chmod +x ./script/vpc_report.sh
+chmod +x ./script/waf_report.sh
+chmod +x ./script/aws_workspaces_report.sh
+log_success "✅ Permissions set."
+
+# Check if the required scripts and config file exist
+REQUIRED_SCRIPTS=(
+    "./script/aws_ec2_report.sh"
+    "./script/aws_rds_report.sh"
+    "./script/ebs_report.sh"
+    "./script/ebs_utilization_report.sh"
+    "./script/aws_billing_report.sh"
+    "./script/s3_report.sh"
+    "./script/elasticache_report.sh"
+    "./script/eks_report.sh"
+    "./script/elb_report.sh"
+    "./script/efs_report.sh"
+    "./script/vpc_report.sh"
+    "./script/waf_report.sh"
+    "./script/aws_sp_report.sh"
+    "./script/aws_ri_report.sh"
+    "./script/aws_workspaces_report.sh"
+)
+
+for script_path in "${REQUIRED_SCRIPTS[@]}"; do
+    if [[ ! -f "$script_path" ]]; then
+        log_error "Error: Required script not found: $script_path"
+        log_error "Please ensure all scripts are in the correct directory."
+        exit 1
+    fi
+done
+
+if [[ ! -f "./config.ini" ]]; then
+    log_error "Error: Configuration file config.ini not found. Please create it."
+    exit 1
+fi
+
+# Create a dated output directory structure
+YEAR=$(date +"%Y")
+MONTH=$(date +"%m")
+DAY=$(date +"%d")
+OUTPUT_DIR="output/${YEAR}/${MONTH}/${DAY}"
+log_start "📁 Creating output directory: ${OUTPUT_DIR}/"
+mkdir -p "${OUTPUT_DIR}"
+log_success "✅ Directory created."
+
+# Read configuration from the INI file
+source <(grep = config.ini | sed 's/ *= */=/g')
+
+# Process flags from CLI arguments without requiring a hyphen
+PASS_THROUGH_ARGS=()
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        -r|--regions|-b|--begin|-e|--end|-f|--filename|-s|--sum-ebs) PASS_THROUGH_ARGS+=("$1"); shift; PASS_THROUGH_ARGS+=("$1") ;;
+        -h|--help)
+            log_start "Usage: $0 <other_args>"
+            log_start "  <other_args>: Arguments for the individual scripts (-r, -b, -e, -f, -s)."
+            log_start "  To select which reports to run, edit the config.ini file."
+            exit 0
+            ;;
+        *) PASS_THROUGH_ARGS+=("$1") ;;
+    esac
+    shift
+done
+
+# Extract and export START_DATE and END_DATE for scripts that expect them in the environment
+# This is a fix for scripts like s3_report.sh which do not parse CLI arguments.
+for (( i=0; i<${#PASS_THROUGH_ARGS[@]}; i++ )); do
+    if [[ "${PASS_THROUGH_ARGS[$i]}" == "-b" ]] || [[ "${PASS_THROUGH_ARGS[$i]}" == "--begin" ]]; then
+        export START_DATE="${PASS_THROUGH_ARGS[$i+1]}"
+    fi
+    if [[ "${PASS_THROUGH_ARGS[$i]}" == "-e" ]] || [[ "${PASS_THROUGH_ARGS[$i]}" == "--end" ]]; then
+        export END_DATE="${PASS_THROUGH_ARGS[$i+1]}"
+    fi
+done
+
+# Initialize an array to store all JSON files
+ALL_JSON_FILES=()
+
+# Run reports based on the configuration file
+if [[ "$billing" == "1" ]]; then
+    log_start "Running aws_billing_report.sh..."
+    ./script/aws_billing_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "aws_billing_report.sh finished."
+fi
+
+if [[ "$ebs_detailed" == "1" ]]; then
+    log_start "Running ebs_report.sh..."
+    ./script/ebs_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "ebs_report.sh finished."
+fi
+
+if [[ "$ebs_utilization" == "1" ]]; then
+    log_start "Running ebs_utilization_report.sh..."
+    ./script/ebs_utilization_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "ebs_utilization_report.sh finished."
+fi
+
+if [[ "$ec2" == "1" ]]; then
+    log_start "Running aws_ec2_report.sh..."
+    ./script/aws_ec2_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "aws_ec2_report.sh finished."
+fi
+
+if [[ "$rds" == "1" ]]; then
+    log_start "Running aws_rds_report.sh..."
+    ./script/aws_rds_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "aws_rds_report.sh finished."
+fi
+
+if [[ "$efs" == "1" ]]; then
+    log_start "Running efs_report.sh..."
+    ./script/efs_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "efs_report.sh finished."
+fi
+
+if [[ "$eks" == "1" ]]; then
+    log_start "Running eks_report.sh..."
+    ./script/eks_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "eks_report.sh finished."
+fi
+
+if [[ "$elasticache" == "1" ]]; then
+    log_start "Running elasticache_report.sh..."
+    ./script/elasticache_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "elasticache_report.sh finished."
+fi
+
+if [[ "$elb" == "1" ]]; then
+    log_start "Running elb_report.sh..."
+    ./script/elb_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "elb_report.sh finished."
+fi
+
+if [[ "$s3" == "1" ]]; then
+    log_start "Running s3_report.sh..."
+    ./script/s3_report.sh
+    log_success "s3_report.sh finished."
+fi
+
+if [[ "$sp" == "1" ]]; then
+    log_start "Running aws_sp_report.sh..."
+    ./script/aws_sp_report.sh
+    log_success "aws_sp_report.sh finished."
+fi
+
+if [[ "$ri" == "1" ]]; then
+    log_start "Running aws_ri_report.sh..."
+    ./script/aws_ri_report.sh
+    log_success "aws_ri_report.sh finished."
+fi
+
+if [[ "$vpc" == "1" ]]; then
+    log_start "Running vpc_report.sh..."
+    ./script/vpc_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "vpc_report.sh finished."
+fi
+
+if [[ "$waf" == "1" ]]; then
+    log_start "Running waf_report.sh..."
+    ./script/waf_report.sh "${PASS_THROUGH_ARGS[@]}"
+    log_success "waf_report.sh finished."
+fi
+
+if [[ "$workspaces" == "1" ]]; then
+    log_start "Running aws_workspaces_report.sh..."
+    ./script/aws_workspaces_report.sh
+    log_success "aws_workspaces_report.sh finished."
+fi
+
+log_success "All selected reports generated successfully."
+
+log_start "Merging individual JSON reports into a single file..."
+ALL_JSON_FILES=($(find "$OUTPUT_DIR" -maxdepth 1 -name "*.json" | sort))
+if [[ "${#ALL_JSON_FILES[@]}" -eq 0 ]]; then
+    log_error "No JSON report files found to merge."
+    exit 1
+fi
+jq -s 'add' "${ALL_JSON_FILES[@]}" > "${OUTPUT_DIR}/all_reports.json"
+log_success "Merged all reports into: ${OUTPUT_DIR}/all_reports.json"
+
+log_start "Generating HTML report..."
+./generate_report.sh "${OUTPUT_DIR}/all_reports.json" "${OUTPUT_DIR}/report.html"
+log_success "HTML report generated: ${OUTPUT_DIR}/report.html"
+
+# --- ZIP the output folder ---
+log_start "📦 Zipping output folder..."
+ZIP_FILENAME="aws_reports_${YEAR}-${MONTH}-${DAY}.zip"
+cd "$OUTPUT_DIR"
+zip -r "${ZIP_FILENAME}" "all_reports.json" "report.html"
+mv "${ZIP_FILENAME}" ../../
+cd ../../
+log_success "✅ All reports have been zipped to: ${ZIP_FILENAME}"
